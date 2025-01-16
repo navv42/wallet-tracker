@@ -84,7 +84,10 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
       const tokenOutputs = transaction.events.swap?.tokenOutputs || [];
       const nativeInput = transaction.events.swap?.nativeInput?.amount || 0;
       const nativeOutput = transaction.events.swap?.nativeOutput?.amount || 0;
-      const timestamp = new Date(transaction.timestamp * 1000).toISOString();
+      const timestamp = new Date(transaction.timestamp * 1000).toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        hour12: false,
+      });
 
       let tokenMint, amount, solAmount, positionUSD;
       let isBuy = false;
