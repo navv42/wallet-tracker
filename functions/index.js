@@ -19,7 +19,6 @@ async function getSolPrice() {
 
 async function sendToSlack(message) {
   try {
-
     if (!SLACK_WEBHOOK_URL) {
       console.warn("No Slack Webhook URL configured.");
       return;
@@ -41,7 +40,7 @@ async function sendToSlack(message) {
     }
 
     console.log("Slack notification sent.");
-    return response.ok ? Date.now() / 1000 : null;  // Return current timestamp if successful
+    return response.ok ? Date.now() / 1000 : null;  // Return current timestamp
   } catch (error) {
     console.error("Error sending Slack notification:", error);
     return null;
@@ -52,17 +51,8 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
   try {
 
     const transactions = req.body;
-    // Log the full request object
-    console.log("Request Object:", JSON.stringify(transactions, null, 2));  // Pretty-printing for better readability
 
-    // Check if 'events' and 'swap' exist before accessing 'tokenOutputs'
-    if (transactions.events && transactions.events.swap) {
-      console.log("Events Swap Object:", JSON.stringify(transactions.events.swap, null, 2));
-      console.log("Token Outputs:", transactions.events.swap.tokenOutputs[0] || "could not find tokenOutputs");
-    } else {
-      console.log("Swap object not found in events.");
-    }
-
+    // console.log("Request Object:", JSON.stringify(transactions, null, 2)); 
 
     if (!transactions || !Array.isArray(transactions)) {
       console.error("Invalid data format:", req.body);
@@ -86,8 +76,8 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
       const nativeOutput = transaction.events.swap?.nativeOutput?.amount || 0;
       const timestamp = new Date(transaction.timestamp * 1000).toLocaleString('en-US', {
         timeZone: 'America/New_York',
-        hour12: false,
-      });
+        hour12: true,
+      }).split(', ')[1];
 
       let tokenMint, amount, solAmount, positionUSD;
       let isBuy = false;
