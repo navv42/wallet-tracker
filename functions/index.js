@@ -12,8 +12,10 @@ async function getSolPrice() {
     const data = await response.json();
     return data.solana.usd;
   } catch (error) {
-    console.error("Error fetching SOL price:", error);
-    throw new Error("Unable to fetch SOL price at this time.");
+    console.log("Error fetching SOL price, falling back to hardcoded value", error);
+    return 250;
+    // console.error("Error fetching SOL price:", error);
+    // throw new Error("Unable to fetch SOL price at this time.");
   }
 }
 
