@@ -120,7 +120,7 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
               text: `*🟢Buy Transaction Detected🟢*\n\n
               *User*: ${userAccount}\n
               *Spent*: ${usdInvestment.toFixed(2)} USD\n
-              *Token*: <https://gmgn.ai/sol/token/${tokenMint}|${tokenMint}>\n
+              *Token*: <https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|${tokenMint}>\n
               *Timestamp*: ${timestamp}`
             }
           },
@@ -161,7 +161,7 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
                 type: "mrkdwn",
                 text: `*🔥3rd Buy Transaction in a Row Detected!🔥*\n\n
                 *User*: ${userAccount}\n
-                *Token*: <https://gmgn.ai/sol/token/${tokenMint}|${tokenMint}>\n
+                *Token*: <https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|${tokenMint}>\n
                 *Current Investment*: ${(-newPosition).toFixed(2)} USD\n
                 *Timestamp*: ${timestamp}`
               }
@@ -181,7 +181,7 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
                     type: "mrkdwn",
                     text: `*💰Sold 100% of Position💰*\n\n
                     *User*: ${userAccount}\n
-                    *Token*: <https://gmgn.ai/sol/token/${tokenMint}|${tokenMint}>\n
+                    *Token*: <https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|${tokenMint}>\n
                     *Profit*: ${newPosition.toFixed(3)} USD\n
                     *Timestamp*: ${timestamp}`
                   }
@@ -202,7 +202,7 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
                 type: "mrkdwn",
                 text: `*🔴Sold 50% or more of Position🔴*\n\n
                 *User*: ${userAccount}\n
-                *Token*: <https://gmgn.ai/sol/token/${tokenMint}|${tokenMint}>\n
+                *Token*: <https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|${tokenMint}>\n
                 *Timestamp*: ${timestamp}`
               }
             },
