@@ -1,10 +1,12 @@
 const functions = require('firebase-functions');
 const { getFirestore } = require("firebase-admin/firestore");
 const { initializeApp } = require("firebase-admin/app");
+const { WebClient } = require('@slack/web-api');
 const fetch = require('node-fetch');
 const app = initializeApp();
 const db = getFirestore('tracker');
-const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
+const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
+const SLACK_CHANNEL = process.env.SLACK_CHANNEL;
 
 async function getSolPrice() {
   try {
@@ -19,30 +21,27 @@ async function getSolPrice() {
   }
 }
 
-async function sendToSlack(message) {
+async function sendToSlack(message, parentTs = null, replyBroadcast = null) {
   try {
-    if (!SLACK_WEBHOOK_URL) {
-      console.warn("No Slack Webhook URL configured.");
+    if (!SLACK_TOKEN) {
+      console.error("Missing SLACK_BOT_TOKEN environment variable.");
       return;
     }
+    const client = new WebClient(SLACK_TOKEN);
 
     const payload = {
-      blocks: message
+      channel: SLACK_CHANNEL,
+      text: 'Buy transaction detected',
+      blocks: message,
+      ...(parentTs && { thread_ts: parentTs }),
+      ...(replyBroadcast && { reply_broadcast: true }),
     };
 
-    const response = await fetch(SLACK_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const result = await client.chat.postMessage(payload);
 
-    if (!response.ok) {
-      console.error("Failed to send Slack message:", await response.text());
-      return null;
-    }
+    console.log("Slack API response:", result);
+    return result
 
-    console.log("Slack notification sent.");
-    return response.ok ? Date.now() / 1000 : null;  // Return current timestamp
   } catch (error) {
     console.error("Error sending Slack notification:", error);
     return null;
@@ -119,18 +118,31 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `*🟢Buy Transaction Detected🟢*\n\n
-              *User*: ${userAccount}\n
-              *Spent*: ${usdInvestment.toFixed(2)} USD\n
-              *Token*: <https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|${tokenMint}>\n
-              *Timestamp*: ${timestamp}`
-            }
+              text: `*🟢 Buy Transaction Detected 🟢* ${timestamp} \n\n` +
+              `\`${usdInvestment.toFixed(2)} USD\`\n` +
+              `\`${tokenMint}\`\n` 
+              
+              
+            },
+          },
+          {
+            type: "context",
+            elements: [
+              {
+                type: "mrkdwn",
+                text: `<https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|View on BullX> • ` + 
+                `<https://gmgn.ai/sol/token/${tokenMint}|View on GMGN> • ` +
+                `<https://gmgn.ai/sol/address/6fm8Nrym_${userAccount}|View User>`
+                
+              }
+            ]
           },
           {
             type: "divider"
-            },
+          }
         ];
-        await sendToSlack(slackMessage);
+        let res = await sendToSlack(slackMessage, null);
+        await docRef.set({ts: res.ts}, {merge: true});
 
       } else {
         const data = doc.data();
@@ -161,18 +173,27 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*🔥3rd Buy Transaction in a Row Detected!🔥*\n\n
-                *User*: ${userAccount}\n
-                *Token*: <https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|${tokenMint}>\n
-                *Current Investment*: ${(-newPosition).toFixed(2)} USD\n
-                *Timestamp*: ${timestamp}`
+                text: `*🔥3rd Buy Transaction Detected!🔥* ${timestamp} \n\n` + 
+                `\`${-newPosition.toFixed(2)} USD\`\n`
               }
+            },
+            {
+              type: "context",
+              elements: [
+                {
+                  type: "mrkdwn",
+                  text: `<https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|View on BullX> • ` + 
+                  `<https://gmgn.ai/sol/token/${tokenMint}|View on GMGN> • ` +
+                  `<https://gmgn.ai/sol/address/6fm8Nrym_${userAccount}|View User>`
+                  
+                }
+              ]
             },
             {
               type: "divider"
             }
           ];
-          await sendToSlack(slackMessage);
+          await sendToSlack(slackMessage, data.ts, true);
         }
 
         if (!isBuy && newQuantity <= 0.1) {
@@ -181,11 +202,8 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
                   type: "section",
                   text: {
                     type: "mrkdwn",
-                    text: `*💰Sold 100% of Position💰*\n\n
-                    *User*: ${userAccount}\n
-                    *Token*: <https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|${tokenMint}>\n
-                    *Profit*: ${newPosition.toFixed(3)} USD\n
-                    *Timestamp*: ${timestamp}`
+                    text: `*💰Sold 100% of Position💰* ${timestamp} \n\n` +
+                    `\`${newPosition.toFixed(2)} USD\`\n`
                   }
                 },
                 {
@@ -193,7 +211,7 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
                 },
     
               ];
-              await sendToSlack(slackMessage);
+              await sendToSlack(slackMessage, data.ts, false);
               await docRef.delete();
         }
         else if (!isBuy && newQuantity < currentQuantity / 2) {
@@ -202,10 +220,7 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `*🔴Sold 50% or more of Position🔴*\n\n
-                *User*: ${userAccount}\n
-                *Token*: <https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|${tokenMint}>\n
-                *Timestamp*: ${timestamp}`
+                text: `*🔴Sold 50% or more of Position🔴* ${timestamp} \n\n`
               }
             },
             {
@@ -214,7 +229,7 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
         
 
           ];
-          await sendToSlack(slackMessage);
+          await sendToSlack(slackMessage, data.ts, false);
         //   console.log(`User ${userAccount} sold 100% of ${tokenMint}. Profit: $${newPosition.toFixed(3)}`);
 
         }
