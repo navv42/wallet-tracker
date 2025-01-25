@@ -1,7 +1,8 @@
 const functions = require('firebase-functions');
 const { getFirestore } = require("firebase-admin/firestore");
 const { initializeApp } = require("firebase-admin/app");
-const { sendToSlack } = require('./slack');
+const { sendToSlack, createSlackMessage } = require('./slack');
+const { MessageType } = require('./types');
 const { getSolPrice } = require('./price');
 const app = initializeApp();
 const db = getFirestore('tracker');
@@ -72,34 +73,12 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
           lastTransaction: timestamp,
         });
 
-        const slackMessage = [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `*🟢 Buy Transaction Detected 🟢* ${timestamp} \n\n` +
-              `\`${usdInvestment.toFixed(2)} USD\`\n` +
-              `\`${tokenMint}\`\n` 
-              
-              
-            },
-          },
-          {
-            type: "context",
-            elements: [
-              {
-                type: "mrkdwn",
-                text: `<https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|View on BullX> • ` + 
-                `<https://gmgn.ai/sol/token/${tokenMint}|View on GMGN> • ` +
-                `<https://gmgn.ai/sol/address/6fm8Nrym_${userAccount}|View User>`
-                
-              }
-            ]
-          },
-          {
-            type: "divider"
-          }
-        ];
+        const slackMessage = createSlackMessage(MessageType.NEW_POSITION, {
+          timestamp,
+          usdAmount: usdInvestment,
+          tokenMint,
+          userAccount
+        });
         let res = await sendToSlack(slackMessage, null);
         await docRef.set({ts: res.ts}, {merge: true});
 
@@ -127,67 +106,32 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
         });
 
         if (data.buyTransactions + 1 == 3 && isBuy) {
-          const slackMessage = [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `*🔥3rd Buy Transaction Detected!🔥* ${timestamp} \n\n` + 
-                `\`${-newPosition.toFixed(2)} USD\`\n`
-              }
-            },
-            {
-              type: "context",
-              elements: [
-                {
-                  type: "mrkdwn",
-                  text: `<https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|View on BullX> • ` + 
-                  `<https://gmgn.ai/sol/token/${tokenMint}|View on GMGN> • ` +
-                  `<https://gmgn.ai/sol/address/6fm8Nrym_${userAccount}|View User>`
-                  
-                }
-              ]
-            },
-            {
-              type: "divider"
-            }
-          ];
+          const slackMessage = createSlackMessage(MessageType.THIRD_BUY, {
+            timestamp,
+            usdAmount: -newPosition,
+            tokenMint,
+            userAccount
+          });
           await sendToSlack(slackMessage, data.ts, true);
         }
 
         if (!isBuy && newQuantity <= 0.1) {
-            const slackMessage = [
-                {
-                  type: "section",
-                  text: {
-                    type: "mrkdwn",
-                    text: `*💰Sold 100% of Position💰* ${timestamp} \n\n` +
-                    `\`${newPosition.toFixed(2)} USD\`\n`
-                  }
-                },
-                {
-                  type: "divider"
-                },
-    
-              ];
+            const slackMessage = createSlackMessage(MessageType.FULL_SELL, {
+              timestamp,
+              usdAmount: newPosition,
+              tokenMint,
+              userAccount
+            });
               await sendToSlack(slackMessage, data.ts, false);
               await docRef.delete();
         }
         else if (!isBuy && newQuantity < currentQuantity / 2) {
-          const slackMessage = [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `*🔴Sold 50% or more of Position🔴* ${timestamp} \n\n`
-              }
-            },
-            {
-              type: "divider"
-            },
-        
-
-          ];
+          const slackMessage = createSlackMessage(MessageType.HALF_SELL, {
+            timestamp,
+            usdAmount: newPosition,
+            tokenMint,
+            userAccount
+          });
           await sendToSlack(slackMessage, data.ts, false);
         //   console.log(`User ${userAccount} sold 100% of ${tokenMint}. Profit: $${newPosition.toFixed(3)}`);
 

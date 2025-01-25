@@ -1,7 +1,71 @@
 const { WebClient } = require('@slack/web-api');
+const { MessageType } = require('./types');
 
 const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_CHANNEL = process.env.SLACK_CHANNEL;
+
+function createSlackMessage(type, { timestamp, usdAmount, tokenMint, userAccount }) {
+  const baseLinks = {
+    type: "context",
+    elements: [{
+      type: "mrkdwn",
+      text: `<https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|View on BullX> • ` + 
+            `<https://gmgn.ai/sol/token/${tokenMint}|View on GMGN> • ` +
+            `<https://gmgn.ai/sol/address/6fm8Nrym_${userAccount}|View User>`
+    }]
+  };
+
+  const messages = {
+    [MessageType.NEW_POSITION]: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*🟢 Buy Transaction Detected 🟢* ${timestamp} \n\n` +
+                `\`${usdAmount.toFixed(2)} USD\`\n` +
+                `\`${tokenMint}\`\n`
+        },
+      },
+      baseLinks,
+      { type: "divider" }
+    ],
+    [MessageType.THIRD_BUY]: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*🔥3rd Buy Transaction Detected!🔥* ${timestamp} \n\n` + 
+                `\`${usdAmount.toFixed(2)} USD\`\n`
+        }
+      },
+      baseLinks,
+      { type: "divider" }
+    ],
+    [MessageType.FULL_SELL]: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*💰Sold 100% of Position💰* ${timestamp} \n\n` +
+                `\`${usdAmount.toFixed(2)} USD\`\n`
+        }
+      },
+      { type: "divider" }
+    ],
+    [MessageType.HALF_SELL]: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*🔴Sold 50% or more of Position🔴* ${timestamp} \n\n`
+        }
+      },
+      { type: "divider" }
+    ]
+  };
+
+  return messages[type];
+}
 
 async function sendToSlack(message, parentTs = null, replyBroadcast = null) {
   try {
@@ -31,5 +95,6 @@ async function sendToSlack(message, parentTs = null, replyBroadcast = null) {
 }
 
 module.exports = {
-  sendToSlack
+  sendToSlack,
+  createSlackMessage
 };
