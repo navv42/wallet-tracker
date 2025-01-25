@@ -1,23 +1,10 @@
 const functions = require('firebase-functions');
 const { getFirestore } = require("firebase-admin/firestore");
 const { initializeApp } = require("firebase-admin/app");
-const fetch = require('node-fetch');
 const { sendToSlack } = require('./slack');
+const { getSolPrice } = require('./price');
 const app = initializeApp();
 const db = getFirestore('tracker');
-
-async function getSolPrice() {
-  try {
-    const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
-    const data = await response.json();
-    return data.solana.usd;
-  } catch (error) {
-    console.log("Error fetching SOL price, falling back to hardcoded value", error);
-    return 250;
-    // console.error("Error fetching SOL price:", error);
-    // throw new Error("Unable to fetch SOL price at this time.");
-  }
-}
 
 
 exports.copyTrade = functions.https.onRequest(async (req, res) => {
