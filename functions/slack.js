@@ -67,7 +67,7 @@ function createSlackMessage(type, { timestamp, usdAmount, tokenMint, userAccount
   return messages[type];
 }
 
-async function sendToSlack(message, parentTs = null, replyBroadcast = null) {
+async function sendToSlack(message, channel, parentTs = null, replyBroadcast = null) {
   try {
     if (!SLACK_TOKEN) {
       console.error("Missing SLACK_BOT_TOKEN environment variable.");
@@ -76,7 +76,7 @@ async function sendToSlack(message, parentTs = null, replyBroadcast = null) {
     const client = new WebClient(SLACK_TOKEN);
 
     const payload = {
-      channel: SLACK_CHANNEL,
+      channel: channel,
       text: 'Buy transaction detected',
       blocks: message,
       ...(parentTs && { thread_ts: parentTs }),
@@ -85,7 +85,7 @@ async function sendToSlack(message, parentTs = null, replyBroadcast = null) {
 
     const result = await client.chat.postMessage(payload);
 
-    console.log("Slack API response:", result);
+    // console.log("Slack API send response:", result);
     return result
 
   } catch (error) {
@@ -94,7 +94,52 @@ async function sendToSlack(message, parentTs = null, replyBroadcast = null) {
   }
 }
 
+async function listAllChannels() {
+  try {
+    if (!SLACK_TOKEN) {
+      console.error("Missing SLACK_BOT_TOKEN environment variable.");
+      return;
+    }
+    const client = new WebClient(SLACK_TOKEN);
+
+    const result = await client.conversations.list({
+      types: 'private_channel, public_channel'
+    });
+
+    // console.log("Slack API list response:", result);
+    return result
+
+  } catch (error) {
+    console.error("Error listing Slack channels:", error);
+    return null;
+  }
+}
+
+async function createChannel(name) {
+  try {
+    if (!SLACK_TOKEN) {
+      console.error("Missing SLACK_BOT_TOKEN environment variable.");
+      return;
+    }
+    const client = new WebClient(SLACK_TOKEN);
+
+    const result = await client.conversations.create({
+      name: name,
+    });
+
+
+    // console.log("Slack API create response:", result);
+    return result
+
+  } catch (error) {
+    console.error("Error creating Slack channel:", error);
+    return null;
+  }
+}
+
 module.exports = {
   sendToSlack,
-  createSlackMessage
+  createSlackMessage,
+  createChannel,
+  listAllChannels
 };

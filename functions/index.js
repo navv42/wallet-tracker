@@ -1,15 +1,18 @@
 const functions = require('firebase-functions');
 const { getFirestore } = require("firebase-admin/firestore");
 const { initializeApp } = require("firebase-admin/app");
-const { sendToSlack, createSlackMessage } = require('./slack');
+
+const { sendToSlack, createSlackMessage, createChannel, listAllChannels } = require('./slack');
 const { MessageType } = require('./types');
 const { getSolPrice } = require('./price');
-const app = initializeApp();
-const db = getFirestore('tracker');
+
+const DEV_HANDLER = process.env.SLACK_CHANNEL;
 
 
 exports.copyTrade = functions.https.onRequest(async (req, res) => {
   try {
+    const app = initializeApp();
+    const db = getFirestore('tracker');
 
     const transactions = req.body;
 
@@ -28,8 +31,6 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
         console.log("Not a SWAP transaction. Ignored.");
         continue;
       }
-
-
       const userAccount = transaction.feePayer;
       const tokenInputs = transaction.events.swap?.tokenInputs || [];
       const tokenOutputs = transaction.events.swap?.tokenOutputs || [];
@@ -57,11 +58,84 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
         continue;
       }
 
-      const usdInvestment = solAmount * solPrice;
+      
       const docRef = db.collection(userAccount).doc(tokenMint);
       const doc = await docRef.get();
+      
+      const channelIDRef = db.collection('wallets').doc(userAccount);
+      const channelIDObj = await channelIDRef.get();
+      let channelID = ""
+
+      if (!channelIDObj.exists) {
+        const allChannels = await listAllChannels();
+        let channel_ID = allChannels.channels.find(channel => channel.name === userAccount.toLowerCase());
+
+        // if (!channel_ID) {
+        //   await createChannel(userAccount.toLowerCase());
+        //   const allChannels = await listAllChannels();
+        //   channel_ID = allChannels.channels.find(channel => channel.name === userAccount.toLowerCase());
+        // }
+        
+        await channelIDRef.set({
+          channelID: channel_ID.id
+        });
+        channelID = channel_ID.id
+      }
+
+      if (isBuy) {
+        await db.collection('recentTransactions').add({
+          userAccount,
+          tokenMint,
+          timestampMs: Date.now(),    // store current time in ms
+        });
+
+        const oneHourAgo = Date.now() - (1 * 60 * 60 * 1000);
+
+        // Query all recent buys for this same token in the last 2 hours
+        const snapshot = await db.collection('recentTransactions')
+          .where('tokenMint', '==', tokenMint)
+          .where('timestampMs', '>=', oneHourAgo)
+          .get();
+
+        // Filter out the *current* user so we only see other wallets
+        const otherBuys = snapshot.docs.filter(doc =>
+          doc.data().userAccount !== userAccount
+        );
+
+        // If there's at least one other wallet that bought the same token, send Slack alert
+        if (otherBuys.length > 0) {
+          // Create a message or block
+          const message = {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*Coordinated Buy Alert*\nTwo wallets bought \`${tokenMint}\` within 2 hours!`
+            }
+          };
+
+          // Post to your "coordinated buys" Slack channel 
+          await sendToSlack(
+            [message],
+            DEV_HANDLER 
+          );
+        }
+        const cleanupTwoHoursAgo = Date.now() - (1 * 60 * 60 * 1000);
+        const oldSnapshot = await db.collection('recentTransactions')
+          .where('timestampMs', '<', cleanupTwoHoursAgo)
+          .get();
+
+        if (!oldSnapshot.empty) {
+          const batch = db.batch();
+          oldSnapshot.forEach(doc => {
+            batch.delete(doc.ref);
+          });
+          await batch.commit();
+          console.log(`Cleaned up ${oldSnapshot.size} old transactions.`);
+        }
+      }
 
 
+      const usdInvestment = solAmount * solPrice;
 
       if (!doc.exists) {
         await docRef.set({
@@ -79,9 +153,8 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
           tokenMint,
           userAccount
         });
-        let res = await sendToSlack(slackMessage, null);
-        await docRef.set({ts: res.ts}, {merge: true});
-
+        sendToSlack(slackMessage, channelID, null, null)
+        .then(res => docRef.set({ ts: res.ts }, { merge: true })); 
       } else {
         const data = doc.data();
         const currentQuantity = data.quantity || 0;
@@ -112,7 +185,8 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
             tokenMint,
             userAccount
           });
-          await sendToSlack(slackMessage, data.ts, true);
+          await sendToSlack(slackMessage, channelID, data.ts, true);
+          await sendToSlack(slackMessage, DEV_HANDLER, data.ts, true);
         }
 
         if (!isBuy && newQuantity <= 0.1) {
@@ -122,8 +196,11 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
               tokenMint,
               userAccount
             });
-              await sendToSlack(slackMessage, data.ts, false);
-              await docRef.delete();
+            await sendToSlack(slackMessage, data.ts, false)
+              .then(() => docRef.delete());
+            await channelIDRef.update({
+                profit: channelIDObj.data().profit + newPosition
+              });
         }
         else if (!isBuy && newQuantity < currentQuantity / 2) {
           const slackMessage = createSlackMessage(MessageType.HALF_SELL, {
@@ -132,7 +209,7 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
             tokenMint,
             userAccount
           });
-          await sendToSlack(slackMessage, data.ts, false);
+          await sendToSlack(slackMessage, channelID, data.ts, false);
         //   console.log(`User ${userAccount} sold 100% of ${tokenMint}. Profit: $${newPosition.toFixed(3)}`);
 
         }
