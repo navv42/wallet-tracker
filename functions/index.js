@@ -8,10 +8,10 @@ const { getSolPrice } = require('./price');
 
 const DEV_HANDLER = process.env.SLACK_CHANNEL;
 
+initializeApp();
 
 exports.copyTrade = functions.https.onRequest(async (req, res) => {
   try {
-    const app = initializeApp();
     const db = getFirestore('tracker');
 
     const transactions = req.body;
@@ -83,11 +83,15 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
       }
 
       if (isBuy) {
-        await db.collection('recentTransactions').add({
+        const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
+        const docId = `${userAccount}_${tokenMint}`.toLowerCase(); 
+        const docRefRT = db.collection('recentTransactions').doc(docId);
+        await docRefRT.set({
           userAccount,
           tokenMint,
-          timestampMs: Date.now(),    // store current time in ms
-        });
+          timestampMs: Date.now(),
+          expireAt: oneHourFromNow  // for TTL
+        }, { merge: true });
 
         const oneHourAgo = Date.now() - (1 * 60 * 60 * 1000);
 
@@ -97,13 +101,12 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
           .where('timestampMs', '>=', oneHourAgo)
           .get();
 
+        const docs = snapshot.docs.map(d => d.data());
+        const distinctWallets = new Set(docs.map(d => d.userAccount));
         // Filter out the *current* user so we only see other wallets
-        const otherBuys = snapshot.docs.filter(doc =>
-          doc.data().userAccount !== userAccount
-        );
 
         // If there's at least one other wallet that bought the same token, send Slack alert
-        if (otherBuys.length > 0) {
+        if (distinctWallets.size > 1) {
           // Create a message or block
           const message = {
             type: "section",
@@ -118,19 +121,6 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
             [message],
             DEV_HANDLER 
           );
-        }
-        const cleanupTwoHoursAgo = Date.now() - (1 * 60 * 60 * 1000);
-        const oldSnapshot = await db.collection('recentTransactions')
-          .where('timestampMs', '<', cleanupTwoHoursAgo)
-          .get();
-
-        if (!oldSnapshot.empty) {
-          const batch = db.batch();
-          oldSnapshot.forEach(doc => {
-            batch.delete(doc.ref);
-          });
-          await batch.commit();
-          console.log(`Cleaned up ${oldSnapshot.size} old transactions.`);
         }
       }
 
