@@ -77,18 +77,31 @@ async function updateFirestoreAndSlack(db, docRef, channelID, userAccount, token
   }
 
   const newQuantity = isBuy ? currentQuantity + parseFloat(amount) : currentQuantity - parseFloat(amount);
+  // For buys: add to investment, for sells: reduce position value
   const newPosition = isBuy ? currentInvestment - usdInvestment : currentInvestment + usdInvestment;
+  
+  // Track total amount invested
+  let totalInvestment = data.totalInvestment || 0;
+  if (isBuy) {
+    totalInvestment += usdInvestment;
+  }
 
   // Calculate profit and percentage gain for sell transactions
   let totalProfit = data.totalProfit || 0;
-  let totalInvestment = data.totalInvestment || 0;
   let percentageGain = data.percentageGain || 0;
 
   if (!isBuy) {
-    const profitFromSell = usdInvestment; // Profit from this sell transaction
+    // Calculate profit based on the portion of position being sold
+    const soldPortion = parseFloat(amount) / currentQuantity;
+    const costBasis = Math.abs(totalInvestment * soldPortion);
+    const saleProceeds = usdInvestment;
+    const profitFromSell = saleProceeds - costBasis;
+    
     totalProfit += profitFromSell;
-    totalInvestment = Math.abs(currentInvestment); // Total investment is the absolute value of positionUSD
-    percentageGain = ((totalProfit / totalInvestment) * 100).toFixed(2); // Calculate percentage gain
+    percentageGain = totalInvestment > 0 ? ((totalProfit / totalInvestment) * 100).toFixed(2) : 0;
+    
+    // Reduce total investment proportionally when selling
+    totalInvestment = totalInvestment * (1 - soldPortion);
   }
 
   await docRef.update({
@@ -113,9 +126,18 @@ async function updateFirestoreAndSlack(db, docRef, channelID, userAccount, token
     if (newQuantity <= 0.1) {
       const slackMessage = createSlackMessage(MessageType.FULL_SELL, { timestamp, usdAmount: newPosition, tokenMint, userAccount });
       await sendToSlack(slackMessage, channelID, data.ts, false);
-      // await docRef.delete();
-      const existingProfit = (await db.collection('wallets').doc(userAccount).get()).data().profit || 0;
-      await db.collection('wallets').doc(userAccount).update({ profit: existingProfit + totalProfit });
+      
+      // Update wallet's total profit only on full position close
+      const walletRef = db.collection('wallets').doc(userAccount);
+      const walletDoc = await walletRef.get();
+      const existingProfit = walletDoc.exists ? (walletDoc.data().profit || 0) : 0;
+      await walletRef.set({
+        profit: existingProfit + totalProfit,
+        lastUpdated: FieldValue.serverTimestamp()
+      }, { merge: true });
+      
+      // Clean up the position document
+      await docRef.delete();
     } else if (newQuantity < currentQuantity / 2) {
       const slackMessage = createSlackMessage(MessageType.HALF_SELL, { timestamp, usdAmount: newPosition, tokenMint, userAccount });
       await sendToSlack(slackMessage, channelID, data.ts, false);
