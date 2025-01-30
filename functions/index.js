@@ -93,12 +93,12 @@ async function updateFirestoreAndSlack(db, docRef, channelID, userAccount, token
   if (!isBuy) {
     // Calculate profit based on the portion of position being sold
     const soldPortion = parseFloat(amount) / currentQuantity;
-    const costBasis = Math.abs(totalInvestment * soldPortion);
+    const costBasis = Math.abs(currentInvestment * soldPortion); // Use currentInvestment as it represents the negative of what was spent
     const saleProceeds = usdInvestment;
-    const profitFromSell = saleProceeds - costBasis;
+    const profitFromSell = saleProceeds + costBasis; // Add because currentInvestment is negative
     
     totalProfit += profitFromSell;
-    percentageGain = totalInvestment > 0 ? ((totalProfit / totalInvestment) * 100).toFixed(2) : 0;
+    percentageGain = totalInvestment > 0 ? ((totalProfit / Math.abs(totalInvestment)) * 100).toFixed(2) : 0;
     
     // Reduce total investment proportionally when selling
     totalInvestment = totalInvestment * (1 - soldPortion);
