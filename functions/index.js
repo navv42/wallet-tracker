@@ -119,7 +119,7 @@ async function updateFirestoreAndSlack(db, docRef, channelID, userAccount, token
   if (isBuy && data.buyTransactions + 1 === 3) {
     const slackMessage = createSlackMessage(MessageType.THIRD_BUY, { timestamp, usdAmount: -newPosition, tokenMint, userAccount });
     await sendToSlack(slackMessage, channelID, data.ts, true);
-    await sendToSlack(slackMessage, DEV_HANDLER, data.ts, true);
+    // await sendToSlack(slackMessage, DEV_HANDLER, data.ts, true);
   }
 
   if (!isBuy) {
@@ -137,7 +137,7 @@ async function updateFirestoreAndSlack(db, docRef, channelID, userAccount, token
       }, { merge: true });
       
       // Clean up the position document
-      await docRef.delete();
+      // await docRef.delete();
     } else if (newQuantity < currentQuantity / 2) {
       const slackMessage = createSlackMessage(MessageType.HALF_SELL, { timestamp, usdAmount: newPosition, tokenMint, userAccount });
       await sendToSlack(slackMessage, channelID, data.ts, false);
