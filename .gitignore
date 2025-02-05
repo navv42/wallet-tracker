@@ -5,3 +5,4 @@ node_modules/
 firestore-debug.log
 firestore.rules
 firestore.indexes.json
+.aider*

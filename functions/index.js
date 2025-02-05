@@ -1,14 +1,23 @@
 const functions = require('firebase-functions');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { initializeApp } = require('firebase-admin/app');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 
-const { sendToSlack, createSlackMessage, listAllChannels } = require('./slack');
+
+
+const { sendToSlack, createSlackMessage, listAllChannels, createSlackPinMessage, pinMessage, updatePinnedMessage } = require('./slack');
 const { MessageType } = require('./types');
 const { getSolPrice } = require('./price');
 
 const DEV_HANDLER = process.env.SLACK_CHANNEL;
 
+
 initializeApp();
+puppeteer.use(StealthPlugin());
+
+// const db = getFirestore('tracker');
+// connectFunctionsEmulator(db, '127.0.0.1', 5001);
 
 async function getOrCreateChannelID(db, userAccount) {
   const channelIDRef = db.collection('wallets').doc(userAccount);
@@ -54,15 +63,16 @@ async function handleBuyTransaction(db, userAccount, tokenMint) {
   const distinctWallets = new Set(snapshot.docs.map(d => d.data().userAccount));
 
   if (distinctWallets.size > 1) {
+    const walletList = Array.from(distinctWallets).join(', ');
     const message = {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Coordinated Buy Alert*\nTwo wallets bought \`${tokenMint}\` within 2 hours!`
+        text: `*Coordinated Buy Alert*\n ${distinctWallets.size} wallets bought \`${tokenMint}\` within 2 hours!\n\nWallets: ${walletList}`
       }
     };
 
-    // await sendToSlack([message], DEV_HANDLER);
+    await sendToSlack([message], DEV_HANDLER);
   }
 }
 
@@ -79,30 +89,7 @@ async function updateFirestoreAndSlack(db, docRef, channelID, userAccount, token
   const newQuantity = isBuy ? currentQuantity + parseFloat(amount) : currentQuantity - parseFloat(amount);
   // For buys: add to investment, for sells: reduce position value
   const newPosition = isBuy ? currentInvestment - usdInvestment : currentInvestment + usdInvestment;
-  
-  // Track total amount invested
-  let totalInvestment = data.totalInvestment || 0;
-  if (isBuy) {
-    totalInvestment += usdInvestment;
-  }
 
-  // Calculate profit and percentage gain for sell transactions
-  let totalProfit = data.totalProfit || 0;
-  let percentageGain = data.percentageGain || 0;
-
-  if (!isBuy) {
-    // Calculate profit based on the portion of position being sold
-    const soldPortion = parseFloat(amount) / currentQuantity;
-    const costBasis = Math.abs(currentInvestment * soldPortion); // Use currentInvestment as it represents the negative of what was spent
-    const saleProceeds = usdInvestment;
-    const profitFromSell = saleProceeds + costBasis; // Add because currentInvestment is negative
-    
-    totalProfit += profitFromSell;
-    percentageGain = totalInvestment > 0 ? ((totalProfit / Math.abs(totalInvestment)) * 100).toFixed(2) : 0;
-    
-    // Reduce total investment proportionally when selling
-    totalInvestment = totalInvestment * (1 - soldPortion);
-  }
 
   await docRef.update({
     quantity: newQuantity,
@@ -111,9 +98,6 @@ async function updateFirestoreAndSlack(db, docRef, channelID, userAccount, token
     buyTransactions: isBuy ? data.buyTransactions + 1 : data.buyTransactions,
     sellTransactions: isBuy ? data.sellTransactions : data.sellTransactions + 1,
     lastTransaction: timestamp,
-    totalProfit: !isBuy ? totalProfit : data.totalProfit, // Update total profit only for sells
-    totalInvestment: !isBuy ? totalInvestment : data.totalInvestment, // Update total investment only for sells
-    percentageGain: !isBuy ? percentageGain : data.percentageGain, // Update percentage gain only for sells
   });
 
   if (isBuy && data.buyTransactions + 1 === 3) {
@@ -127,21 +111,19 @@ async function updateFirestoreAndSlack(db, docRef, channelID, userAccount, token
       const slackMessage = createSlackMessage(MessageType.FULL_SELL, { timestamp, usdAmount: newPosition, tokenMint, userAccount });
       await sendToSlack(slackMessage, channelID, data.ts, false);
       
-      // Update wallet's total profit only on full position close
-      const walletRef = db.collection('wallets').doc(userAccount);
-      const walletDoc = await walletRef.get();
-      const existingProfit = walletDoc.exists ? (walletDoc.data().profit || 0) : 0;
-      await walletRef.set({
-        profit: existingProfit + totalProfit,
-        lastUpdated: FieldValue.serverTimestamp()
-      }, { merge: true });
       
       // Clean up the position document
-      // await docRef.delete();
+      await docRef.delete();
     } else if (newQuantity < currentQuantity / 2) {
       const slackMessage = createSlackMessage(MessageType.HALF_SELL, { timestamp, usdAmount: newPosition, tokenMint, userAccount });
       await sendToSlack(slackMessage, channelID, data.ts, false);
     }
+
+    await db.collection('sells').add({
+      userAccount,
+      createdAt: FieldValue.serverTimestamp(),
+      expireAt: new Date(Date.now() + 60 * 60 * 1000)
+    })
   }
 }
 
@@ -219,3 +201,131 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
     res.status(500).send('Internal server error');
   }
 });
+
+
+
+
+// exports.onSellTransactionWrite = functions.firestore.onDocumentCreated({
+//     document: 'sells/{docId}',
+//     database: 'tracker', 
+//     memory: "1GiB",
+//   }, async (event) => {
+
+//     const db = getFirestore('tracker');
+//     const data = event.data.data();
+//     const userAccount = data.userAccount;
+//     const walletAddress = userAccount;
+
+//     console.log("Scraping coin stats for wallet:", walletAddress);
+
+//     const browser = await puppeteer.launch({
+//       headless: 'new',  
+//       args: [
+//         '--no-sandbox',
+//         '--disable-setuid-sandbox',
+//         '--disable-dev-shm-usage',
+//         '--disable-gpu',
+//         '--window-size=1920,1080'
+//       ],
+//       defaultViewport: { width: 1920, height: 1080 },
+//     });
+//     const page = await browser.newPage(); 
+//     await page.setUserAgent(
+//       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.5845.97 Safari/537.36'
+//     );
+  
+//     const url = `https://gmgn.ai/sol/address/${walletAddress}`;
+//     const response = await page.goto(url, { waitUntil: 'networkidle2' });
+//     console.log('Response status:', response.status());
+//     console.log('Response headers:', response.headers());
+  
+//     // Wait for the script to appear
+//     try {
+//       await page.waitForSelector('#__NEXT_DATA__', { timeout: 100000 });
+//     } catch (error) {
+//       console.log('Selector not found, taking screenshot...');
+//       await page.screenshot({ path: '/tmp/failed-page.png', fullPage: true });
+//       // You could also log the HTML:
+//       const content = await page.content();
+//       console.log(content);
+//       throw error;
+//     }
+  
+//     // Get page content
+//     const html = await page.content();
+//     const startTag = '<script id="__NEXT_DATA__" type="application/json">';
+//     const endTag = '</script>';
+//     const startIndex = html.indexOf(startTag);
+//     const endIndex = html.indexOf(endTag, startIndex);
+//     const jsonText = html.slice(startIndex + startTag.length, endIndex);
+    
+//     // Parse JSON
+//     const nextData = JSON.parse(jsonText);
+//     const addressInfo = nextData?.props?.pageProps?.addressInfo;
+  
+  
+    
+    
+//     await browser.close();
+//     const websiteData = {
+//       profit_7d: addressInfo.realized_profit_7d,
+//       profit_30d: addressInfo.realized_profit_30d,
+//       profit: addressInfo.realized_profit,
+//       winRate: addressInfo.winrate 
+//     };
+
+//     // Reference to the wallet document
+//     const channelIDRef = db.collection('wallets').doc(userAccount);
+
+//     // Check if the wallet document exists
+//     const docSnapshot = await channelIDRef.get();
+//     if (!docSnapshot.exists) {
+//       console.log(`Wallet document for user ${userAccount} does not exist.`);
+//       return;
+//     }
+
+//     // Get the Slack channel ID from Firestore
+//     const channelID = docSnapshot.data()?.channelID;
+//     if (!channelID) {
+//       console.error(`No channelID found for user ${userAccount}.`);
+//       return;
+//     }
+
+//     // Update the wallet data in Firestore
+//     await channelIDRef.update(websiteData);
+//     console.log(`Updated wallet data for user: ${userAccount}`);
+
+//     // Handle Slack message (create/update pinned message)
+//     const existingMessageTs = docSnapshot.data()?.slackMessageTs; // Check for existing Slack message timestamp
+
+//     if (existingMessageTs) {
+//       // Update the existing pinned message
+//       const message = createSlackPinMessage(websiteData);
+//       const updateResult = await updatePinnedMessage(channelID, existingMessageTs, message);
+//       if (!updateResult) {
+//         console.error('Failed to update pinned message on Slack.');
+//         return;
+//       }
+//       console.log('Pinned message updated successfully.');
+//     } else {
+//       // Create and pin a new message
+//       const message = createSlackPinMessage(websiteData);
+//       const postResult = await sendToSlack(message, channelID);
+//       if (!postResult) {
+//         console.error('Failed to post message to Slack.');
+//         return;
+//       }
+
+//       // Pin the message
+//       const pinResult = await pinMessage(channelID, postResult.ts);
+//       if (!pinResult) {
+//         console.error('Failed to pin message to Slack.');
+//         return;
+//       }
+
+//       // Store the Slack message timestamp in Firestore
+//       await channelIDRef.update({ slackMessageTs: postResult.ts });
+//       console.log('Profit figures posted, pinned, and timestamp stored successfully.');
+//     }
+//   }
+// );
