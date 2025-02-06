@@ -99,35 +99,35 @@ async function updateSlack(db, userAccount, websiteData) {
   // Handle Slack message (create/update pinned message)
   const existingMessageTs = docSnapshot.data()?.slackMessageTs; // Check for existing Slack message timestamp
 
-  if (existingMessageTs) {
-    // Update the existing pinned message
-    const message = createSlackPinMessage(userAccount, websiteData);
-    const updateResult = await updatePinnedMessage(channelID, existingMessageTs, message);
-    if (!updateResult) {
-      console.error("Failed to update pinned message on Slack.");
-      return;
-    }
-    console.log("Pinned message updated successfully.");
-  } else {
+//   if (existingMessageTs) {
+//     // Update the existing pinned message
+//     const message = createSlackPinMessage(userAccount, websiteData);
+//     const updateResult = await updatePinnedMessage(channelID, existingMessageTs, message);
+//     if (!updateResult) {
+//       console.error("Failed to update pinned message on Slack.");
+//       return;
+//     }
+//     console.log("Pinned message updated successfully.");
+//   } else {
     // Create and pin a new message
     const message = createSlackPinMessage(userAccount, websiteData);
     const postResult = await sendToSlack(message, channelID);
     if (!postResult) {
-      console.error("Failed to post message to Slack.");
-      return;
+        console.error("Failed to post message to Slack.");
+        return;
     }
 
     // Pin the message
     const pinResult = await pinMessage(channelID, postResult.ts);
     if (!pinResult) {
-      console.error("Failed to pin message to Slack.");
-      return;
+        console.error("Failed to pin message to Slack.");
+        return;
     }
 
     // Store the Slack message timestamp in Firestore
     await channelIDRef.update({ slackMessageTs: postResult.ts });
-    console.log("Profit figures posted, pinned, and timestamp stored successfully.");
-  }
+console.log("Profit figures posted, pinned, and timestamp stored successfully.");
+//   }
 }
 
 async function main() {

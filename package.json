@@ -11,5 +11,13 @@
   "description": "",
   "devDependencies": {
     "firebase-tools": "^13.29.1"
+  },
+  "dependencies": {
+    "@slack/web-api": "^7.8.0",
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^6.0.1",
+    "puppeteer": "^24.1.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }
