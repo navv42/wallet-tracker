@@ -64,13 +64,26 @@ async function handleBuyTransaction(db, userAccount, tokenMint) {
 
   if (distinctWallets.size > 1) {
     const walletList = Array.from(distinctWallets).join(', ');
-    const message = {
-      type: "section",
-      text: {
+    const baseLinks = {
+      type: "context",
+      elements: [{
         type: "mrkdwn",
-        text: `*Coordinated Buy Alert*\n ${distinctWallets.size} wallets bought \`${tokenMint}\` within 2 hours!\n\nWallets: ${walletList}`
-      }
+        text: `<https://neo.bullx.io/terminal?chainId=1399811149&address=${tokenMint}|View on BullX> • ` + 
+              `<https://gmgn.ai/sol/token/${tokenMint}|View on GMGN> • ` +
+              `<https://gmgn.ai/sol/address/6fm8Nrym_${userAccount}|View User>`
+      }]
     };
+    const message = [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `${distinctWallets.size} wallets bought \`${tokenMint}\` within 2 hours!\n\nWallets: ${walletList}`
+        }
+      },
+      baseLinks,
+      { type: "divider" }
+    ];
 
     await sendToSlack([message], DEV_HANDLER);
   }
