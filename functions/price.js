@@ -7,7 +7,7 @@ async function getSolPrice() {
     return data.solana.usd;
   } catch (error) {
     console.log("Error fetching SOL price, falling back to hardcoded value", error);
-    return 250;
+    return 190;
   }
 }
 

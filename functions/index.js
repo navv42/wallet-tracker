@@ -157,11 +157,22 @@ exports.copyTrade = functions.https.onRequest(async (req, res) => {
         console.log("Not a SWAP transaction. Ignored.");
         continue;
       }
+      const { feePayer: userAccount, events, timestamp } = transaction;
+      const { swap } = events;
+      console.log("Swap event:", JSON.stringify(swap, null, 2));
 
-      const { feePayer: userAccount, events: { swap }, timestamp } = transaction;
-      const { tokenInputs = [], tokenOutputs = [], nativeInput = { amount: 0 }, nativeOutput = { amount: 0 } } = swap || {};
+      const { tokenInputs = [], tokenOutputs = [], nativeInput, nativeOutput } = swap;
+      
+      // Log the swap event details
+      console.log("Swap details:", JSON.stringify({
+        tokenInputs,
+        tokenOutputs,
+        nativeInput,
+        nativeOutput
+      }, null, 2));
+      // const { feePayer: userAccount, events: { swap }, timestamp } = transaction;
+      // const { tokenInputs = [], tokenOutputs = [], nativeInput = { amount: 0 }, nativeOutput = { amount: 0 } } = swap || {};
       const timestampStr = new Date(timestamp * 1000).toLocaleString('en-US', { timeZone: 'America/New_York', hour12: true }).split(', ')[1];
-      console.log("timestampStr:", timestampStr);
 
       let tokenMint, amount, solAmount, isBuy = false;
 
